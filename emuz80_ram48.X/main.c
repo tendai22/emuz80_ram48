@@ -498,11 +498,11 @@ void main(void) {
     // CLC pin assign
     // 0, 1, 4, 5: Port A, C
     // 2, 3, 6, 7: Port B, D
-    CLCIN0PPS = 0x00;   // RA0 <- /IORQ
-    CLCIN1PPS = 0x05;   // RA5 <- /RD
+    CLCIN0PPS = 0x01;   // RA1 <- /MREQ
+    CLCIN1PPS = 0x00;   // RA0 <- /IORQ
     CLCIN2PPS = 0x14;   // RB4 <- /RFSH
     CLCIN3PPS = 0x15;   // RB5 <- /WAIT
-    CLCIN4PPS = 0x01;   // RA1 <- /MREQ
+    CLCIN4PPS = 0x05;   // RA5 <- /RD
 
     // 1, 2, 5, 6: Port A, C
     // 3, 4, 7, 8: Port B, D
@@ -515,14 +515,14 @@ void main(void) {
     CLCSELECT = 0;  // CLC1 select
     CLCnCON &= ~0x80;
     
-    CLCnSEL0 = 4;       // CLCIN4PPS <- /MREQ
-    CLCnSEL1 = 1;       // CLCIN1PPS <- /RD
-    CLCnSEL2 = 2;     // CLCIN2PPS <- /RFSH
+    CLCnSEL0 = 0;       // CLCIN0PPS <- /MREQ
+    CLCnSEL1 = 2;       // CLCIN2PPS <- /RFSH
+    CLCnSEL2 = 4;       // CLCIN4PPS <- /RD
     CLCnSEL3 = 127;     // NC
     
     CLCnGLS0 = 0x01;    // /MREQ == 0 (inverted)
-    CLCnGLS1 = 0x04;    // /RD   == 0 (inverted)
-    CLCnGLS2 = 0x20;    // /RFSH == 1 (not inverted)
+    CLCnGLS1 = 0x08;    // /RFSH == 1 (non-inverted)
+    CLCnGLS2 = 0x10;    // /RD == 0 (inverted)
     CLCnGLS3 = 0x40;    // 1 for AND gate
     
     CLCnPOL = 0x80;     // inverted the CLC1 output
@@ -533,9 +533,9 @@ void main(void) {
     CLCSELECT = 1;  // CLC1 select
     CLCnCON &= ~0x80;
     
-    CLCnSEL0 = 4;       // CLCIN4PPS <- /MREQ
-    CLCnSEL1 = 1;       // CLCIN1PPS <- /RD
-    CLCnSEL2 = 2;       // CLCIN2PPS <- /RFSH
+    CLCnSEL0 = 0;       // CLCIN0PPS <- /MREQ
+    CLCnSEL1 = 2;       // CLCIN2PPS <- /RFSH
+    CLCnSEL2 = 4;       // CLCIN4PPS <- /RD
     CLCnSEL3 = 127;     // NC
     
     CLCnGLS0 = 0x01;    // /DS == 0 (inverted)
@@ -550,20 +550,18 @@ void main(void) {
     CLCSELECT = 2;      // CLC3 select
     CLCnCON &= ~0x80;
     
-    CLCnSEL0 = 4;       // D-FF CLK <- CLCIN4PPS <- /MREQ
-    CLCnSEL1 = 2;       // D-FF D1  <- CLCIN2PPS <- /RD
-    CLCnSEL2 = 127;     // D-FF RESET
-    CLCnSEL3 = 127;     // D-FF D2  <- CLCIN2PPS <- /RFSH
+    CLCnSEL0 = 1;       // D-FF CLK <- CLCIN1PPS <- /IORQ
+    CLCnSEL1 = 127;     // D-FF D NC
+    CLCnSEL2 = 127;     // D-FF SET NC
+    CLCnSEL3 = 127;     // D-FF RESET NC
     
-    CLCnGLS0 = 0x01;    // /MREQ ~|_  (inverted)
-    CLCnGLS1 = 0x08;    // /RD (non inverted)
-    //CLCnGLS1 = 0x40;    // 1 for D-FF D
+    CLCnGLS0 = 0x01;    // /IORQ ~|_  (inverted)
+    CLCnGLS1 = 0x00;    // /RD (non inverted)
     CLCnGLS2 = 0x00;    // D-FF RESET (soft reset)
-    //CLCnGLS3 = 0x00;    // Connect none
-    CLCnGLS3 = 0x80;    // 0 for D-FF RESET
+    CLCnGLS3 = 0x00;    // 0 for D-FF RESET
     
-    CLCnPOL = 0x00;     // non-inverted the CLC3 output (D input has already inverted)
-    CLCnCON = 0x85;     // Select 2-input D-FF with R (no interrupt) 
+    CLCnPOL = 0x82;     // inverted the CLC3 output
+    CLCnCON = 0x84;     // Select D-FF (no interrupt)
         
   
     
