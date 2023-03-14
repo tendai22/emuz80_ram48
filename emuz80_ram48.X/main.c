@@ -72,7 +72,7 @@
 
 #define _XTAL_FREQ 64000000UL
 
-#define TOGGLE do { LATD5 ^= 1; } while(0)
+#define TOGGLE do { LATE1 ^= 1; } while(0)
 
 unsigned char ram[RAM_SIZE]; // Equivalent to RAM
 union {
@@ -106,58 +106,56 @@ char peek_ram(addr_t addr)
 {
     char c;
     TRISD &= ~0x1f;
-    TRISB = 0;  // A0-12 output
+    TRISF = 0;  // A0-12 output
     LATD = ((LATD & 0xe0) | (unsigned char)((addr >> 8) & 0x1f));
-    LATB = (unsigned char)(addr & 0xff);
+    LATF = (unsigned char)(addr & 0xff);
     db_setin();
-    SRAM_OE = 0;  // OE = 0;
+    LATA4 = 0;  // RA4: OE = 0;
     c = PORTC;
-    SRAM_OE = 1;
+    LATA4 = 1;
     TRISD |= 0x1f;
-    TRISB = 0xff;   // A0-12 input
+    TRISF = 0xff;   // A0-12 input
     return c;
 }
 
 void poke_ram(addr_t addr, char c)
 {
     //xprintf("(%04x,%02x)", addr, c);
-    TRISD &= ~0x1f;
-    TRISB = 0;  // AA0-15 output
+    TRISD &= ~0xff;
+    TRISF = 0;  // AA0-15 output
     LATD = ((LATD & 0xe0) | (unsigned char)((addr >> 8) & 0x1f));
-    LATB = (unsigned char)(addr & 0xff);
-    LATA2 = 0;  // WE = 0;
+    LATF = (unsigned char)(addr & 0xff);
+    LATA2 = 0;  // RA2: WE = 0;
     db_setout();
     LATC = c;
     LATA2 = 1;
     db_setin();
-    TRISD |= 0x1f;
-    TRISB = 0xff;   // A0-15 input
+    TRISD |= 0xff;
+    TRISF = 0xff;   // A0-15 input
 }
     
-void HALT_on(void)
+void BUSRQ_on(void)
 {
-    TRISE1 = 0;
-    LATE1 = 0;
+    LATE0 = 0;
 }
 
-void HALT_off(void)
+void BUSRQ_off(void)
 {
     //TRISE1 = 1; // RESET is Open-Drain and pulled-up, so
                 // only do it input-mode is necessary
-    LATE1 = 1;
+    LATE0 = 1;
 }
 
 void RESET_on(void)
 {
-    TRISE2 = 0; // output
-    LATE2 = 0;
+    LATE1 = 0;
 }
 
 void RESET_off(void)
 {
     //WPUE2 = 1;
     //TRISE2 = 1; // set as input
-    LATE2 = 1;
+    LATE1 = 1;
 }
 
 static int uc = -1;
@@ -281,7 +279,7 @@ void manualboot(void)
     }
 }
 
-#define GET_ADDR() ((RD6 ? 0x80000L : 0L) | ((unsigned long)(PORTD&0x1f)<<8) | PORTB)
+#define GET_ADDR() (((unsigned long)(PORTD&0x1f)<<8) | PORTF)
 
 //
 // monitor
@@ -321,13 +319,6 @@ void monitor(int monitor_mode)
     }
 }
 
-void toggle_DTACK(void)
-{
-    CLCSELECT = 2;      // CLC3 select
-    //CLCnPOL = 0x82;     // inverted the CLC3 output
-    CLCnPOL ^= 0x80;    // toggle POL on CLC3
-}
-
 void reset_DFF(void)
 {
     TOGGLE;
@@ -349,6 +340,12 @@ void main(void) {
     // System initialize
     OSCFRQ = 0x08; // 64MHz internal OSC
 
+    // RE1: RESET output pin
+    ANSELE1 = 0; // Disable analog function
+    LATE1 = 0; // RESET assert
+    TRISE1 = 0; // Set as output
+
+    TOGGLE; TOGGLE;
     // xprintf initialize
     xdev_out(putch);
     xdev_in(getch);
@@ -363,12 +360,12 @@ void main(void) {
     // Address bus A15-A8 pin
     ANSELD = 0x00; // Disable analog function
     WPUD = 0xff; // Week pull up
-    TRISD |= 0x1f; // Set as input
+    TRISD |= 0xff; // Set as input
 
     // Address bus A7-A0 pin
-    ANSELB = 0x00; // Disable analog function
-    WPUB = 0xff; // Week pull up
-    TRISB = 0xff; // Set as input
+    ANSELF = 0x00; // Disable analog function
+    WPUF = 0xff; // Week pull up
+    TRISF = 0xff; // Set as input
 
     // Data bus D7-D0 pin
     ANSELC = 0x00; // Disable analog function
@@ -377,62 +374,59 @@ void main(void) {
 
     // IO pin assignment
     
-    // RESET output pin
-    ANSEL(RESET) = 0; // Disable analog function
-    LAT(RESET) = 0; // RESET assert
-    TRIS(RESET) = 0; // Set as output
+    // RE1: RESET output pin
+    ANSELE1 = 0; // Disable analog function
+    LATE1 = 0; // RESET assert
+    TRISE1 = 0; // Set as output
 
-    // BUSRQ output pin
-    ANSEL(BUSRQ) = 0; // Disable analog function
-    LAT(BUSRQ) = 0; // HALT assert
-    TRIS(BUSRQ) = 0; // Set as output
+    // RE0: BUSRQ output pin
+    ANSELE0 = 0; // Disable analog function
+    LATE0 = 1; // BUSRQ deassert
+    TRISE0 = 0; // Set as output
 
-    // INT output pin
-    ANSEL(INT) = 0; // Disable analog function
-    LAT(INT) = 1; // No interrupt request
-    TRIS(INT) = 0; // Set as output
+    // RE2: INT output pin
+    ANSELE0 = 0; // Disable analog function
+    LATE0 = 1; // No interrupt request
+    TRISE0 = 0; // Set as output
 
-    // WAIT output pin
-    ANSEL(WAIT) = 0; // Disable analog function
-    LAT(WAIT) = 1; // DTACK negate
-    TRIS(WAIT) = 0; // Set as output
+    // RB5: WAIT output pin
+    ANSELB5 = 0; // Disable analog function
+    LATB5 = 1; // WAIT negate
+    TRISB5 = 0; // Set as output
 
-    // M1 input pin
-    ANSEL(M1) = 0; // Disable analog function
-    TRIS(M1) = 1; // Set as input
+    // RB7: M1 input pin
+    ANSELB7 = 0; // Disable analog function
+    TRISB7 = 1; // Set as input
 
-    // RFSH input pin
-    ANSEL(RFSH) = 0;
-    TRIS(RFSH) = 1; // set as input
+    // RB4: RFSH input pin
+    ANSELB4 = 0;
+    TRISB4 = 1; // set as input
     
-    // RD input pin
-    ANSEL(RD) = 0; // Disable analog function
-    WPU(RD) = 1; // Week pull up
-    TRIS(RD) = 1; // Set as input
+    // RA5: RD input pin
+    ANSELA5 = 0; // Disable analog function
+    TRISA5 = 1; // Set as input
 
     // SRAM OE,WE
-    // SRAM OE pin
-    ANSEL(SRAM_OE) = 0;
-    LAT(SRAM_OE) = 1;  // WE negate
-    TRIS(SRAM_OE) = 0; // set as output
+    // RA4: SRAM OE pin
+    ANSELA4 = 0;
+    LATA4 = 1;  // WE negate
+    TRISA4 = 0; // set as output
     
-    // SRAM WE pin
-    ANSEL(SRAM_WE) = 0;
-    LAT(SRAM_WE) = 1;  // OE negate
-    TRIS(SRAM_WE) = 0; // set as output
+    // RA2: SRAM WE pin
+    ANSELA2 = 0;
+    LATA2 = 1;  // OE negate
+    TRISA2 = 0; // set as output
 
-    // MREQ input pin
-    ANSEL(MREQ) = 0; // Disable analog function
-    WPU(MREQ) = 1; // Week pull up
-    TRIS(MRFEQ) = 1; // Set as input
+    // RA1: MREQ input pin
+    ANSELA1 = 0; // Disable analog function
+    TRISA1 = 1; // Set as input
 
-    // IORQ input pin
-    ANSEL(IORQ) = 0; // Disable analog function
-    WPU(IORQ) = 1; // Week pull up
-    TRIS(IORQ) = 1; // Set as input
+    // RA0: IORQ input pin
+    ANSELA0 = 0; // Disable analog function
+    TRISA0 = 1; // Set as input
 
     // Z80 clock(RA3) by NCO FDC mode
-    RA3PPS = 0x3f; // RA3 asign NCO1
+    RA3PPS = 0x3f; // RA3 assign NCO1
     ANSELA3 = 0; // Disable analog function
     TRISA3 = 0; // NCO output pin
     NCO1INC = Z80_CLK * 2 / 61;
@@ -460,19 +454,23 @@ void main(void) {
     TRISA6 = 0; // TX set as output
     RA6PPS = 0x26;  //RA6->UART3:TX3;
 
-    // TEST Pin RD7
-    ANSEL(TEST) = 0;
-    TRIS(TEST) = 0;
-    LAT(TEST) = 0;
+    // RB6: TEST Pin output
+    ANSELB6 = 0;
+    TRISB6 = 0;
+    LATB6 = 0;
     
     // 1, 2, 5, 6: Port A, C
     // 3, 4, 7, 8: Port B, D
-    RxyPPS(SRAM_OE) = 0x0;  // LATA4 -> RA4 -> /OE
-    RxyPPS(SRAM_WE) = 0x0;  // LATA2 -> RA2 -> /WE
-    RxyPPS(WAIT) = 0x0;  // LATB5 -> RB5 -> WAIT
+    RA4PPS = 0x0;  // LATA4 -> RA4 -> /OE
+    RA2PPS = 0x0;  // LATA2 -> RA2 -> /WE
+    RB5PPS = 0x0;  // LATB5 -> RB5 -> WAIT
 
     U3ON = 1; // Serial port enable
+    TOGGLE; TOGGLE;
+    xprintf(":");
+    TOGGLE; TOGGLE;
     xprintf(";");
+    TOGGLE; TOGGLE;
     manualboot();
 
     TOGGLE;
@@ -481,17 +479,17 @@ void main(void) {
 #if 1
     // Address bus A15-A8 pin
     ANSELD = 0x00; // Disable analog function
-    //WPUD = 0x1f; // Week pull up
-    TRISD |= 0x1f; // Set as input
+    WPUD = 0xff; // Week pull up
+    TRISD |= 0xff; // Set as input
 
     // Address bus A7-A0 pin
-    ANSELB = 0x00; // Disable analog function
-    //WPUB = 0xff; // Week pull up
-    TRISB = 0xff; // Set as input
+    ANSELF = 0x00; // Disable analog function
+    WPUF = 0xff; // Week pull up
+    TRISF = 0xff; // Set as input
 
     // Data bus D7-D0 pin
     ANSELC = 0x00; // Disable analog function
-    //WPUC = 0xff; // Week pull up
+    WPUC = 0xff; // Week pull up
     TRISC = 0xff; // Set as input(default)
 #endif
     // reconfigurate CLC devices
@@ -506,9 +504,9 @@ void main(void) {
 
     // 1, 2, 5, 6: Port A, C
     // 3, 4, 7, 8: Port B, D
-    RxyPPS(SRAM_OE) = 0x01;  // CLC1 -> RA4 -> /OE
-    RxyPPS(SRAM_WE) = 0x02;  // CLC2 -> RA2 -> /WE
-    RxyPPS(WAIT) = 0x03;     // CLC3 -> RD7 -> /WAIT
+    RA4PPS = 0x01;  // CLC1 -> RA4 -> /OE
+    RA2PPS = 0x02;  // CLC2 -> RA2 -> /WE
+    RB5PPS = 0x03;     // CLC3 -> RB5 -> /WAIT
     
     // ============ CLC1 /OE
     // /OE = (/MREQ == 0 && /RD == 0 && /RFSH == 1)
@@ -568,24 +566,24 @@ void main(void) {
     xprintf("start ss = %d, bp = %04X\n", ss_flag, break_address);
     // Z80 start
     //CLCDATA = 0x7;
-    HALT_off();
+    BUSRQ_off();
     TOGGLE;
     RESET_off();    // RESET negate
+    reset_DFF();
     db_setin();
     TOGGLE;
     TOGGLE;
     TOGGLE;
-    reset_DFF();
     while(1){
-        while(!RD7);    // Wait for /DTACK == 1
+        while(!RB5);    // Wait for /DTACK == 1
 //        while(RA0);     // Wait for /AS == 0
 //        while(!RD6);
         // /DTACK == 1, later we need to set /DTACK == 0
         TOGGLE;
         TOGGLE;
-        if (!RD6) 
+        if (!RA1) 
             goto end_of_cycle;
-        if(RA5) { // MC68008 read cycle (RW = 1)
+        if(!RA5) { // MC68008 read cycle (RW = 1)
             db_setout();
             addr = GET_ADDR();
             // A19 == 1, IO address
@@ -625,12 +623,12 @@ void main(void) {
             monitor_mode = 0;
         }
     end_of_cycle:
-        while(RA1); // Wait for DS = 0;
-        HALT_on();
+        while(RA0 && RA1); // Wait for DS = 0;
+        BUSRQ_on();
         reset_DFF(); // reset D-FF, /DTACK be zero
-        while(!RA1); // Wait for DS = 1;
+        while(RA0 == 0 || RA1 == 0); // Wait for DS = 1;
         db_setin(); // Set data bus as output
-        HALT_off();
+        BUSRQ_off();
     }
 }
 

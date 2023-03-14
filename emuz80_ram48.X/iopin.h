@@ -9,14 +9,15 @@
 #define __IOPIN_H
 
 /* pin defintion for MPUPU_RAM48 on Z80(normal 40pin version) */
-#define LAT(pin) LAT ## pin
-#define TRIS(pin) TRIS ## pin
-#define ANSEL(pin) ANSEL ## pin
-#define WPU(pin) WUP ## pin
-#define RxyPPS(pin) R ## pin ## PPS
+#define LAT_(pin) LAT ## pin
+#define TRIS_(pin) TRIS ## pin
+#define ANSEL_(pin) ANSEL ## pin
+#define PORT_(pin)  R ## pin
+#define WPU_(pin) WUP ## pin
+#define RxyPPS_(pin) R ## pin ## PPS
 
 /* cpu controls */
-#define RESET   E1
+#define RRESET   E1
 #define INT     E2
 #undef NMI
 #define BUSRQ   E0
