@@ -25,12 +25,12 @@
 #undef HALT
 
 /* memory access */
-#define WAIT    B5
+#define WAIT    B7
 #define MREQ    A1
 #define IORQ    A0
 #define RD      A5
 #undef WR
-#define M1      B7
+#define M1      B5
 #define RFSH    B4
 
 #define SRAM_OE A4

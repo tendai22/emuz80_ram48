@@ -72,7 +72,7 @@
 
 #define _XTAL_FREQ 64000000UL
 
-#define TOGGLE do { LATE1 ^= 1; } while(0)
+#define TOGGLE do { LATB6 ^= 1; } while(0)
 
 unsigned char ram[RAM_SIZE]; // Equivalent to RAM
 union {
@@ -105,15 +105,15 @@ int getch(void) {
 char peek_ram(addr_t addr)
 {
     char c;
-    TRISD &= ~0x1f;
+    TRISD &= ~0xff;
     TRISF = 0;  // A0-12 output
-    LATD = ((LATD & 0xe0) | (unsigned char)((addr >> 8) & 0x1f));
+    LATD = ((unsigned char)((addr >> 8) & 0xff));
     LATF = (unsigned char)(addr & 0xff);
     db_setin();
     LATA4 = 0;  // RA4: OE = 0;
     c = PORTC;
     LATA4 = 1;
-    TRISD |= 0x1f;
+    TRISD |= 0xff;
     TRISF = 0xff;   // A0-12 input
     return c;
 }
@@ -123,7 +123,7 @@ void poke_ram(addr_t addr, char c)
     //xprintf("(%04x,%02x)", addr, c);
     TRISD &= ~0xff;
     TRISF = 0;  // AA0-15 output
-    LATD = ((LATD & 0xe0) | (unsigned char)((addr >> 8) & 0x1f));
+    LATD = ((unsigned char)((addr >> 8) & 0xff));
     LATF = (unsigned char)(addr & 0xff);
     LATA2 = 0;  // RA2: WE = 0;
     db_setout();
@@ -328,6 +328,43 @@ void reset_DFF(void)
     TOGGLE;
 }
 
+void march_test(void)
+{
+    addr_t p, last = 0xffff;
+    int n = 0;
+    for (p = 0; p <= last; ++p) {
+        poke_ram(p, 0);
+    }
+    n++;
+    for (p = 0; i <= last; ++p) {
+        if (peek_ram(p) == 0)
+            poke_ram(p, 1);
+        else {
+            xprintf("%d: fail at %04X\n", n, p);
+            return;
+        }
+    }
+    n++;
+    for (p = last; p > 0; --p) {
+        if (peek_ram(p) == 0)
+            poke_ram(p, 1);
+        else {
+            xprintf("%d: fail at %04X\n", n, p);
+            return;
+        }
+    }
+    // p should be zero
+    if (peek_ram(p) == 0)
+        poke_ram(p, 1);
+    else {
+        xprintf("%d: fail at %04X\n", n, p);
+        return;
+    }
+    n++;
+    for (p = last; )
+    }
+}
+
 
 #define db_setin() (TRISC = 0xff)
 #define db_setout() (TRISC = 0x00)
@@ -389,14 +426,14 @@ void main(void) {
     LATE0 = 1; // No interrupt request
     TRISE0 = 0; // Set as output
 
-    // RB5: WAIT output pin
-    ANSELB5 = 0; // Disable analog function
-    LATB5 = 1; // WAIT negate
-    TRISB5 = 0; // Set as output
+    // RB7: WAIT output pin
+    ANSELB7 = 0; // Disable analog function
+    LATB7 = 1; // WAIT negate
+    TRISB7 = 0; // Set as output
 
     // RB7: M1 input pin
-    ANSELB7 = 0; // Disable analog function
-    TRISB7 = 1; // Set as input
+    ANSELB5 = 0; // Disable analog function
+    TRISB5 = 1; // Set as input
 
     // RB4: RFSH input pin
     ANSELB4 = 0;
@@ -463,14 +500,10 @@ void main(void) {
     // 3, 4, 7, 8: Port B, D
     RA4PPS = 0x0;  // LATA4 -> RA4 -> /OE
     RA2PPS = 0x0;  // LATA2 -> RA2 -> /WE
-    RB5PPS = 0x0;  // LATB5 -> RB5 -> WAIT
+    RB7PPS = 0x0;  // LATB7 -> RB7 -> WAIT
 
     U3ON = 1; // Serial port enable
-    TOGGLE; TOGGLE;
     xprintf(":");
-    TOGGLE; TOGGLE;
-    xprintf(";");
-    TOGGLE; TOGGLE;
     manualboot();
 
     TOGGLE;
@@ -499,14 +532,14 @@ void main(void) {
     CLCIN0PPS = 0x01;   // RA1 <- /MREQ
     CLCIN1PPS = 0x00;   // RA0 <- /IORQ
     CLCIN2PPS = 0x14;   // RB4 <- /RFSH
-    CLCIN3PPS = 0x15;   // RB5 <- /WAIT
+    CLCIN3PPS = 0x17;   // RB7 <- /WAIT
     CLCIN4PPS = 0x05;   // RA5 <- /RD
 
     // 1, 2, 5, 6: Port A, C
     // 3, 4, 7, 8: Port B, D
     RA4PPS = 0x01;  // CLC1 -> RA4 -> /OE
     RA2PPS = 0x02;  // CLC2 -> RA2 -> /WE
-    RB5PPS = 0x03;     // CLC3 -> RB5 -> /WAIT
+    RB7PPS = 0x03;     // CLC3 -> RB7 -> /WAIT
     
     // ============ CLC1 /OE
     // /OE = (/MREQ == 0 && /RD == 0 && /RFSH == 1)
@@ -575,7 +608,7 @@ void main(void) {
     TOGGLE;
     TOGGLE;
     while(1){
-        while(!RB5);    // Wait for /DTACK == 1
+        while(RB7);    // Wait for /WAIT == 9
 //        while(RA0);     // Wait for /AS == 0
 //        while(!RD6);
         // /DTACK == 1, later we need to set /DTACK == 0
