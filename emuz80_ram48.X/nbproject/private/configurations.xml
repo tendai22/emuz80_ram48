@@ -5,7 +5,11 @@
   <confs>
     <conf name="default" type="2">
       <platformToolSN>:=MPLABComm-USB-Microchip:=&lt;vid>04D8:=&lt;pid>9018:=&lt;rev>0100:=&lt;man>Microchip Technology Incorporated:=&lt;prod>MPLAB Snap ICD:=&lt;sn>BUR184671642:=&lt;drv>x:=&lt;xpt>b:=end</platformToolSN>
+<<<<<<< HEAD
       <languageToolchainDir>C:\Program Files\Microchip\xc8\v2.36\bin</languageToolchainDir>
+=======
+      <languageToolchainDir>C:\Program Files\Microchip\xc8\v2.41\bin</languageToolchainDir>
+>>>>>>> 06393a5ebd3149dadbe64fd76fe6cd395e473c08
       <mdbdebugger version="1">
         <placeholder1>place holder 1</placeholder1>
         <placeholder2>place holder 2</placeholder2>

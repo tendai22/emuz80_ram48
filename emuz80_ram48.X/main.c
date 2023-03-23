@@ -90,13 +90,13 @@ int ss_flag = 0;
 #define db_setout() (TRISC = 0x00)
 
 // UART3 Transmit
-void putch(int c) {
+void putchx(int c) {
     while(!U3TXIF); // Wait or Tx interrupt flag set
     U3TXB = (unsigned char)c; // Write data
 }
 
 // UART3 Recive
-int getch(void) {
+int getchx(void) {
     while(!U3RXIF); // Wait for Rx interrupt flag set
     return U3RXB; // Read data
 }
@@ -111,6 +111,8 @@ char peek_ram(addr_t addr)
     LATF = (unsigned char)(addr & 0xff);
     db_setin();
     LATA4 = 0;  // RA4: OE = 0;
+#define nop asm("  nop")
+    nop; nop; nop; nop; nop; nop; nop;   // dummy write for 400ns
     c = PORTC;
     LATA4 = 1;
     TRISD |= 0xff;
@@ -125,9 +127,10 @@ void poke_ram(addr_t addr, char c)
     TRISF = 0;  // AA0-15 output
     LATD = ((unsigned char)((addr >> 8) & 0xff));
     LATF = (unsigned char)(addr & 0xff);
-    LATA2 = 0;  // RA2: WE = 0;
     db_setout();
     LATC = c;
+    LATA2 = 0;  // RA2: WE = 0;
+    nop; nop; nop; nop; nop; nop; nop;   // dummy write for 400ns
     LATA2 = 1;
     db_setin();
     TRISD |= 0xff;
@@ -168,7 +171,7 @@ int getchr(void)
         uc = -1;
         return c;
     }
-    while ((c = getch()) == '.' && count++ < 2);
+    while ((c = getchx()) == '.' && count++ < 2);
     if (c == '.') {
         count = 0;
         return -1;
@@ -310,7 +313,7 @@ void monitor(int monitor_mode)
             xprintf(" OUT: %02x", (int)PORTC);
         }
 #if 0
-        if ((c = getch()) == '.')
+        if ((c = getchr()) == '.')
             ss_flag = 0;
         else if (c == 's' || c == ' ')
             ss_flag = 1;
@@ -332,37 +335,44 @@ void march_test(void)
 {
     addr_t p, last = 0xffff;
     int n = 0;
-    for (p = 0; p <= last; ++p) {
+    p = 0;
+    do {
         poke_ram(p, 0);
-    }
+    } while (p++ != last);
     n++;
-    for (p = 0; i <= last; ++p) {
+    p = 0;
+    do {
         if (peek_ram(p) == 0)
             poke_ram(p, 1);
         else {
             xprintf("%d: fail at %04X\n", n, p);
             return;
         }
-    }
+    } while (p++ != last);
     n++;
-    for (p = last; p > 0; --p) {
+    p = last;
+    do {
         if (peek_ram(p) == 0)
             poke_ram(p, 1);
         else {
             xprintf("%d: fail at %04X\n", n, p);
             return;
         }
-    }
-    // p should be zero
-    if (peek_ram(p) == 0)
-        poke_ram(p, 1);
-    else {
-        xprintf("%d: fail at %04X\n", n, p);
-        return;
-    }
+    } while (p-- != 0);
     n++;
-    for (p = last; )
-    }
+    p = last;
+    do {
+        if (peek_ram(p) == 1)
+            poke_ram(p, 0);
+        else {
+            goto error;
+        }
+    } while (p-- != 0);
+    xprintf("all ok\n");
+    return;
+error:
+    xprintf("%d: fail at %04X\n", n, p);
+    return;
 }
 
 
@@ -384,8 +394,8 @@ void main(void) {
 
     TOGGLE; TOGGLE;
     // xprintf initialize
-    xdev_out(putch);
-    xdev_in(getch);
+    xdev_out(putchx);
+    xdev_in(getchx);
     // CLC disable
     CLCSELECT = 0;
     CLCnCON &= ~0x80;
@@ -503,7 +513,7 @@ void main(void) {
     RB7PPS = 0x0;  // LATB7 -> RB7 -> WAIT
 
     U3ON = 1; // Serial port enable
-    xprintf(":");
+    xprintf(";");
     manualboot();
 
     TOGGLE;
