@@ -83,7 +83,7 @@ union {
     };
 } ab;
 
-unsigned int break_address = 0; // break_address is zero, it is invalid
+addr_t break_address = 0; // break_address is zero, it is invalid
 int ss_flag = 0;
 
 #define db_setin() (TRISC = 0xff)
@@ -204,6 +204,18 @@ int to_hex(char c)
     return -1;
 }
 
+void clear_all(void)
+{
+    addr_t p = 0;
+    int i = 0;
+    do {
+        if ((p & 0xfff) == 0) {
+            xprintf("%X", i++);
+        }
+        poke_ram(p, 0);
+    } while (p++ != 0xffff);
+}
+
 void manualboot(void)
 {
     int c, cc, d, n, count;
@@ -246,6 +258,10 @@ void manualboot(void)
         if (c == 'g') { // start with no-single_step
             ss_flag = 0;
             break;      // start prosessor
+        }
+        if (c == ',') { // clear ram
+            clear_all();
+            continue;
         }
         addr_flag = ((c == '=') || (c == '%'));
         cc = c;
@@ -541,9 +557,11 @@ void main(void) {
     // 2, 3, 6, 7: Port B, D
     CLCIN0PPS = 0x01;   // RA1 <- /MREQ
     CLCIN1PPS = 0x00;   // RA0 <- /IORQ
-    CLCIN2PPS = 0x14;   // RB4 <- /RFSH
-    CLCIN3PPS = 0x17;   // RB7 <- /WAIT
+    CLCIN2PPS = 0x0C;   // RB4 <- /RFSH
+    CLCIN3PPS = 0x0F;   // RB7 <- /WAIT
     CLCIN4PPS = 0x05;   // RA5 <- /RD
+    CLCIN6PPS = 0x1F;   // RD7 <- A15
+    CLCIN7PPS = 0x1E;   // RD6 <- A14
 
     // 1, 2, 5, 6: Port A, C
     // 3, 4, 7, 8: Port B, D
@@ -580,8 +598,8 @@ void main(void) {
     CLCnSEL3 = 127;     // NC
     
     CLCnGLS0 = 0x01;    // /DS == 0 (inverted)
-    CLCnGLS1 = 0x08;    // /RD == 1 (not inverted)
-    CLCnGLS2 = 0x20;    // /RFSH == 1 (not inverted)
+    CLCnGLS1 = 0x08;    // /RFSH == 1 (not inverted)
+    CLCnGLS2 = 0x20;    // /RD == 1 (not inverted)
     CLCnGLS3 = 0x40;    // 1 for AND gate
     
     CLCnPOL = 0x80;     // inverted the CLC1 output
@@ -591,32 +609,51 @@ void main(void) {
     CLCSELECT = 2;      // CLC3 select
     CLCnCON &= ~0x80;
     
-    CLCnSEL0 = 1;       // D-FF CLK <- CLCIN1PPS <- /IORQ
-    CLCnSEL1 = 127;     // D-FF D NC
+//    CLCnSEL0 = 1;       // D-FF CLK <- CLCIN1PPS <- /IORQ
+//    CLCnSEL1 = 127;     // D-FF D NC
+    CLCnSEL0 = 0;       // D-FF CLK <-- CLCIN0PPS <- /MREQ
+    CLCnSEL1 = 0x36;    // D-FF D <- CLC4 
     CLCnSEL2 = 127;     // D-FF SET NC
     CLCnSEL3 = 127;     // D-FF RESET NC
     
-    CLCnGLS0 = 0x01;    // /IORQ ~|_  (inverted)
-    CLCnGLS1 = 0x00;    // /RD (non inverted)
-    CLCnGLS2 = 0x00;    // D-FF RESET (soft reset)
+//    CLCnGLS0 = 0x01;    // /IORQ ~|_  (inverted)
+//    CLCnGLS1 = 0x00;    // /RD (non inverted)
+    CLCnGLS0 = 0x01;    // D-FF CLK /MREQ ~|_  (inverted)
+    CLCnGLS1 = 0x04;    // D-FF D   CLC4 (inverted)
+    CLCnGLS2 = 0x00;    // D-FF SET (soft reset)
     CLCnGLS3 = 0x00;    // 0 for D-FF RESET
     
-    CLCnPOL = 0x82;     // inverted the CLC3 output
+    CLCnPOL = 0x00;     // non inverted the CLC3 output
     CLCnCON = 0x84;     // Select D-FF (no interrupt)
         
-  
+    // ============== CLC4 Address Decode
+    CLCSELECT = 3;      // CLC4 select
+    CLCnCON &= ~0x80;
+    
+    CLCnSEL0 = 6;       // A15
+    CLCnSEL1 = 7;       // A14
+    CLCnSEL2 = 2;       // /RFSH
+    CLCnSEL3 = 127;     // NC
+    
+    CLCnGLS0 = 0x02;    // A15 (non invert)
+    CLCnGLS1 = 0x08;    // A14 (non invert)
+    CLCnGLS2 = 0x20;    // /RFSH (non invert)
+    CLCnGLS3 = 0x40;    // 1 for AND gate
+    
+    CLCnPOL = 0x00;     // non inverted CLC4 output
+    CLCnCON = 0x82;     // 4 input AND
     
     xprintf("start ss = %d, bp = %04X\n", ss_flag, break_address);
     // Z80 start
     //CLCDATA = 0x7;
     BUSRQ_off();
-    TOGGLE;
-    RESET_off();    // RESET negate
     reset_DFF();
     db_setin();
     TOGGLE;
     TOGGLE;
     TOGGLE;
+    TOGGLE;
+    RESET_off();    // RESET negate
     while(1){
         while(RB7);    // Wait for /WAIT == 9
 //        while(RA0);     // Wait for /AS == 0
@@ -624,12 +661,12 @@ void main(void) {
         // /DTACK == 1, later we need to set /DTACK == 0
         TOGGLE;
         TOGGLE;
-        if (!RA1) 
+        if (!RA1)  // MREQ == 0, memory cycle, do nothing
             goto end_of_cycle;
-        if(!RA5) { // MC68008 read cycle (RW = 1)
+        // IORQ == 0, IO R/W cycle or INTA cycle
+        if(!RA5) { // RD == 0, Z80 read cycle (RW = 1)
             db_setout();
             addr = GET_ADDR();
-            // A19 == 1, IO address
             if (addr == UART_CREG){ // UART control register
                 // PIR9 pin assign
                 // U3TXIF ... bit 1, 0x02
