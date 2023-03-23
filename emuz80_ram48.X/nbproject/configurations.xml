@@ -35,13 +35,13 @@
         <targetDevice>PIC18F57Q43</targetDevice>
         <targetHeader></targetHeader>
         <targetPluginBoard></targetPluginBoard>
-        <platformTool>noID</platformTool>
+        <platformTool>snap</platformTool>
         <languageToolchain>XC8</languageToolchain>
-        <languageToolchainVersion>2.40</languageToolchainVersion>
+        <languageToolchainVersion>2.36</languageToolchainVersion>
         <platform>3</platform>
       </toolsSet>
       <packs>
-        <pack name="PIC18F-Q_DFP" vendor="Microchip" version="1.13.211"/>
+        <pack name="PIC18F-Q_DFP" vendor="Microchip" version="1.15.360"/>
       </packs>
       <ScriptingSettings>
       </ScriptingSettings>
