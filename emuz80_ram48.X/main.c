@@ -74,7 +74,7 @@
 
 #define TOGGLE do { LATB6 ^= 1; } while(0)
 
-unsigned char ram[RAM_SIZE]; // Equivalent to RAM
+//unsigned char ram[RAM_SIZE]; // Equivalent to RAM
 union {
     unsigned int w; // 16 bits Address
     struct {
@@ -213,7 +213,7 @@ void clear_all(void)
             xprintf("%X", i++);
         }
         poke_ram(p, 0);
-    } while (p++ != 0xffff);
+    } while (p++ != 0xdfff);
 }
 
 void manualboot(void)
@@ -298,7 +298,7 @@ void manualboot(void)
     }
 }
 
-#define GET_ADDR() (((unsigned long)(PORTD&0x1f)<<8) | PORTF)
+#define GET_ADDR() (((unsigned long)(PORTD)<<8) | PORTF)
 
 //
 // monitor
@@ -408,6 +408,11 @@ void main(void) {
     LATE1 = 0; // RESET assert
     TRISE1 = 0; // Set as output
 
+    // RB6: TEST Pin output
+    ANSELB6 = 0;
+    TRISB6 = 0;
+    LATB6 = 0;
+    
     TOGGLE; TOGGLE;
     // xprintf initialize
     xdev_out(putchx);
@@ -517,11 +522,6 @@ void main(void) {
     TRISA6 = 0; // TX set as output
     RA6PPS = 0x26;  //RA6->UART3:TX3;
 
-    // RB6: TEST Pin output
-    ANSELB6 = 0;
-    TRISB6 = 0;
-    LATB6 = 0;
-    
     // 1, 2, 5, 6: Port A, C
     // 3, 4, 7, 8: Port B, D
     RA4PPS = 0x0;  // LATA4 -> RA4 -> /OE
@@ -563,12 +563,6 @@ void main(void) {
     CLCIN6PPS = 0x1F;   // RD7 <- A15
     CLCIN7PPS = 0x1E;   // RD6 <- A14
 
-    // 1, 2, 5, 6: Port A, C
-    // 3, 4, 7, 8: Port B, D
-    RA4PPS = 0x01;  // CLC1 -> RA4 -> /OE
-    RA2PPS = 0x02;  // CLC2 -> RA2 -> /WE
-    RB7PPS = 0x03;     // CLC3 -> RB7 -> /WAIT
-    
     // ============ CLC1 /OE
     // /OE = (/MREQ == 0 && /RD == 0 && /RFSH == 1)
     CLCSELECT = 0;  // CLC1 select
@@ -589,7 +583,7 @@ void main(void) {
             
     // ============ CLC2 /WE
     // /OE = (/MREQ == 0 && /RD == 1 && /RFSH == 1)
-    CLCSELECT = 1;  // CLC1 select
+    CLCSELECT = 1;  // CLC2 select
     CLCnCON &= ~0x80;
     
     CLCnSEL0 = 0;       // CLCIN0PPS <- /MREQ
@@ -597,12 +591,12 @@ void main(void) {
     CLCnSEL2 = 4;       // CLCIN4PPS <- /RD
     CLCnSEL3 = 127;     // NC
     
-    CLCnGLS0 = 0x01;    // /DS == 0 (inverted)
+    CLCnGLS0 = 0x01;    // /MREQ == 0 (inverted)
     CLCnGLS1 = 0x08;    // /RFSH == 1 (not inverted)
     CLCnGLS2 = 0x20;    // /RD == 1 (not inverted)
     CLCnGLS3 = 0x40;    // 1 for AND gate
     
-    CLCnPOL = 0x80;     // inverted the CLC1 output
+    CLCnPOL = 0x80;     // inverted the CLC2 output
     CLCnCON = 0x82;     // 4 input AMD
             
     // ============== CLC3 /WAIT
@@ -621,8 +615,12 @@ void main(void) {
     CLCnGLS0 = 0x01;    // D-FF CLK /MREQ ~|_  (inverted)
     CLCnGLS1 = 0x04;    // D-FF D   CLC4 (inverted)
     CLCnGLS2 = 0x00;    // D-FF SET (soft reset)
-    CLCnGLS3 = 0x00;    // 0 for D-FF RESET
-    
+    CLCnGLS3 = 0x80;    // 0 for D-FF RESET
+
+    // reset D-FF
+    CLCnGLS3 = 0x40;    // 1 for D-FF RESET
+    CLCnGLS3 = 0x80;    // 0 for D-FF RESET
+
     CLCnPOL = 0x00;     // non inverted the CLC3 output
     CLCnCON = 0x84;     // Select D-FF (no interrupt)
         
@@ -639,9 +637,17 @@ void main(void) {
     CLCnGLS1 = 0x08;    // A14 (non invert)
     CLCnGLS2 = 0x20;    // /RFSH (non invert)
     CLCnGLS3 = 0x40;    // 1 for AND gate
-    
+
     CLCnPOL = 0x00;     // non inverted CLC4 output
     CLCnCON = 0x82;     // 4 input AND
+
+    // Here, we have CLC's be intialized.
+    // Now we change GPIO pins to be switched
+    // 1, 2, 5, 6: Port A, C
+    // 3, 4, 7, 8: Port B, D
+    RA4PPS = 0x01;      // CLC1 -> RA4 -> /OE
+    RA2PPS = 0x02;      // CLC2 -> RA2 -> /WE
+    RB7PPS = 0x03;      // CLC3 -> RB7 -> /WAIT
     
     xprintf("start ss = %d, bp = %04X\n", ss_flag, break_address);
     // Z80 start
@@ -661,8 +667,8 @@ void main(void) {
         // /DTACK == 1, later we need to set /DTACK == 0
         TOGGLE;
         TOGGLE;
-        if (!RA1)  // MREQ == 0, memory cycle, do nothing
-            goto end_of_cycle;
+        //if (!RA1)  // MREQ == 0, memory cycle, do nothing
+        //    goto end_of_cycle;
         // IORQ == 0, IO R/W cycle or INTA cycle
         if(!RA5) { // RD == 0, Z80 read cycle (RW = 1)
             db_setout();
@@ -672,29 +678,32 @@ void main(void) {
                 // U3TXIF ... bit 1, 0x02
                 // U3RXIF ... bit 0, 0x01
                 LATC = PIR9; // U3 flag
+                //xprintf("%02X,", PIR9);
             } else if(addr == UART_DREG) { // UART data register
                 LATC = U3RXB; // U3 RX buffer
-            } else if((addr & 0xfff00) == DBG_PORT) {
-                monitor_mode = 2;   // DBG_PORT read
+            //} else if((addr & 0xff00) == DBG_PORT) {
+            //    monitor_mode = 2;   // DBG_PORT read
             } else { // invalid address
-                xprintf("%05lX: %02X %c bad\n", addr, PORTC, (RA5 ? 'R' : 'W'));
-                monitor_mode = 0;
+                LATC = 0xff;
+                //xprintf("%05lX: %02X %c bad\n", addr, PORTC, (RA5 ? 'R' : 'W'));
+                //monitor_mode = 0;
             }
             if (ss_flag || monitor_mode) {
                 xprintf("%05lX: %02X %c m%d\n", addr, PORTC, (RA5 ? 'R' : 'W'), monitor_mode);
                 monitor(monitor_mode);
                 monitor_mode = 0;
             }
-        } else { // MC68008 memory write cycle (RW = 0)
+        } else { // Z80 write cycle (RW = 0)
             addr = GET_ADDR();
             // A19 == 1, I/O address area
             if(addr == UART_DREG) { // UART data register
                 U3TXB = PORTC; // Write into U3 TX buffer
-            } else if((addr & 0xfff00) == DBG_PORT) {
-                monitor_mode = 1;   // DBG_PORT write
+            //} else if((addr & 0xfff00) == DBG_PORT) {
+            //    monitor_mode = 1;   // DBG_PORT write
             } else {
-                xprintf("%05lX: %02X %c\n", addr, PORTC, (RA5 ? 'R' : 'W'));
-                monitor_mode = 1;
+                // ignore write C000 or upper
+                //xprintf("%05lX: %02X %c\n", addr, PORTC, (RA5 ? 'R' : 'W'));
+                //monitor_mode = 1;
             }
         }
         if (ss_flag || monitor_mode) {
