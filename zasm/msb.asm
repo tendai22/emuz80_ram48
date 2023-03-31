@@ -20,6 +20,46 @@
 ; Adapted for the freeware Zilog Macro Assembler 2.10 to produce
 ; the original ROM code (checksum A934H). PA
 
+; tweaked by Norihiro Kumagai, for Denno-Densetsu emuz80 version.
+; 2023-3-26
+
+; header modules, RST 10H, RST 18H, RST 8H
+
+uart_d  equ 0e001h
+uart_c  equ 0e000h
+
+        org 0
+        ld  sp,0100h
+        jp  0100h
+; RST 8H ... putch
+        org 8h
+        jp  putch
+; RST 10H ... kbhit
+        org 010H        ; getkey, ret key to A
+        jp  getch
+; RST 18H ... getch
+        org 018H        ; kbhit, ret NZ if key ready
+        jp  kbhit
+;
+;
+;
+        org 040H
+getch:  ld  a,(uart_c)
+        and a,1         ; check RXRDY
+        jr  z,getch
+        ld  a,(uart_d)
+        ret
+kbhit:  ld  a,(uart_c)
+        and a,1         ; check RXRDY
+        ret
+putch:  push af
+putch1: ld  a,(uart_c)
+        and a,2         ; check TXRDY
+        jr  z,putch1
+        pop af
+        ld  (uart_d),a
+        ret
+
 ; GENERAL EQUATES
 
 CTRLC   .EQU    03H             ; Control "C"
@@ -38,7 +78,7 @@ DEL     .EQU    7FH             ; Delete
 
 ; BASIC WORK SPACE LOCATIONS
 
-WRKSPC  .EQU    4090H             ; BASIC Work space
+WRKSPC  .EQU    2090H             ; BASIC Work space
 USR     .EQU    WRKSPC+3H           ; "USR (x)" jump
 OUTSUB  .EQU    WRKSPC+6H           ; "OUT p,n"
 OTPORT  .EQU    WRKSPC+7H           ; Port (p)
@@ -127,7 +167,7 @@ MO      .EQU    24H             ; Missing operand
 HX      .EQU    26H             ; HEX error
 BN      .EQU    28H             ; BIN error
 
-        .ORG    02000H
+        .ORG    0100H
 
 COLD:   JP      STARTB          ; Jump for cold start
 WARM:   JP      WARMST          ; Jump for warm start

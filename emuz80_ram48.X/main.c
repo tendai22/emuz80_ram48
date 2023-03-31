@@ -91,13 +91,13 @@ int ss_flag = 0;
 
 // UART3 Transmit
 void putchx(int c) {
-    while(!U3TXIF); // Wait or Tx interrupt flag set
+    while(!U3TXBE); // Wait for Tx buffer empty
     U3TXB = (unsigned char)c; // Write data
 }
 
 // UART3 Recive
 int getchx(void) {
-    while(!U3RXIF); // Wait for Rx interrupt flag set
+    while(U3RXBE); // Wait while Rx buffer is empty
     return U3RXB; // Read data
 }
 
@@ -340,11 +340,11 @@ void monitor(int monitor_mode)
 
 void reset_DFF(void)
 {
-    TOGGLE;
+    //TOGGLE;
     CLCSELECT = 2;      // CLC3 select
     CLCnGLS3 = 0x40;    // 1 for D-FF RESET
     CLCnGLS3 = 0x80;    // 0 for D-FF RESET
-    TOGGLE;
+    //TOGGLE;
 }
 
 void march_test(void)
@@ -399,6 +399,7 @@ error:
 void main(void) {
     int monitor_mode = 0;
     int count;
+    unsigned char cc;
     unsigned long addr;
     // System initialize
     OSCFRQ = 0x08; // 64MHz internal OSC
@@ -508,6 +509,8 @@ void main(void) {
     U3CON0 |= (1<<7);   // BRGS = 0, 4 baud clocks per bit
     U3BRG = 138;    // 115200bps @ 64MHz, BRG=0, 99%
 
+    U3CON0 &= 0xf0; // clear U3MODE 0000 -> 8bit
+    U3TXBE = U3RXBE = 0;    // clear tx/rx/buffer
     U3RXEN = 1; // Receiver enable
     U3TXEN = 1; // Transmitter enable
 
@@ -665,25 +668,40 @@ void main(void) {
 //        while(RA0);     // Wait for /AS == 0
 //        while(!RD6);
         // /DTACK == 1, later we need to set /DTACK == 0
-        TOGGLE;
-        TOGGLE;
+        //TOGGLE;
+        //TOGGLE;
         //if (!RA1)  // MREQ == 0, memory cycle, do nothing
         //    goto end_of_cycle;
         // IORQ == 0, IO R/W cycle or INTA cycle
         if(!RA5) { // RD == 0, Z80 read cycle (RW = 1)
-            db_setout();
             addr = GET_ADDR();
             if (addr == UART_CREG){ // UART control register
                 // PIR9 pin assign
                 // U3TXIF ... bit 1, 0x02
                 // U3RXIF ... bit 0, 0x01
-                LATC = PIR9; // U3 flag
-                //xprintf("%02X,", PIR9);
+                // U3FIFO bit assign
+                // TXBE   ... bit 5, 0x20
+                // TXBF   ... bit 4, 0x10
+                // RXBE   ... bit 1, 0x02
+                // RXBF   ... bit 0, 0x01
+                //cc = (U3TXBE ? 0x20 : 0) | (U3RXBE ? 2 : 0);
+                cc = PIR9;
+                db_setout();
+                LATC = cc; // U3 flag
+                //xprintf("%02X,", cc);
             } else if(addr == UART_DREG) { // UART data register
-                LATC = U3RXB; // U3 RX buffer
+                cc = U3RXB; // U3 RX buffer
+                xprintf("[%02X]", cc);
+                while(!(PIR9 & 2));
+                db_setout();
+                LATC = cc;
+                TOGGLE;
+                for (int i = 3; i-- > 0; ) nop;
+                TOGGLE;
             //} else if((addr & 0xff00) == DBG_PORT) {
             //    monitor_mode = 2;   // DBG_PORT read
             } else { // invalid address
+                db_setout();
                 LATC = 0xff;
                 //xprintf("%05lX: %02X %c bad\n", addr, PORTC, (RA5 ? 'R' : 'W'));
                 //monitor_mode = 0;
@@ -697,7 +715,16 @@ void main(void) {
             addr = GET_ADDR();
             // A19 == 1, I/O address area
             if(addr == UART_DREG) { // UART data register
+                // this cycle actually starts at /MREQ down edge,
+                // so too early PORTC reading will get garbage.
+                // We need to wait for stable Z80 data bus.
+                TOGGLE;
+                for (int i = 5; i-- > 0; ) nop;
+                TOGGLE;
                 U3TXB = PORTC; // Write into U3 TX buffer
+                xprintf("(%02X)", PORTC);
+                while(!(PIR9 & 2));
+            //while(PIR9 & 2);
             //} else if((addr & 0xfff00) == DBG_PORT) {
             //    monitor_mode = 1;   // DBG_PORT write
             } else {
@@ -716,7 +743,8 @@ void main(void) {
         BUSRQ_on();
         reset_DFF(); // reset D-FF, /DTACK be zero
         while(RA0 == 0 || RA1 == 0); // Wait for DS = 1;
-        db_setin(); // Set data bus as output
+        //for (int i = 3; i-- > 0;) nop;
+        db_setin(); // Set data bus as input
         BUSRQ_off();
     }
 }
