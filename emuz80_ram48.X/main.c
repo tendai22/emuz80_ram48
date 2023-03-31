@@ -691,7 +691,7 @@ void main(void) {
                 //xprintf("%02X,", cc);
             } else if(addr == UART_DREG) { // UART data register
                 cc = U3RXB; // U3 RX buffer
-                xprintf("[%02X]", cc);
+                //xprintf("[%02X]", cc);
                 while(!(PIR9 & 2));
                 db_setout();
                 LATC = cc;
@@ -722,7 +722,7 @@ void main(void) {
                 for (int i = 5; i-- > 0; ) nop;
                 TOGGLE;
                 U3TXB = PORTC; // Write into U3 TX buffer
-                xprintf("(%02X)", PORTC);
+                //xprintf("(%02X)", PORTC);
                 while(!(PIR9 & 2));
             //while(PIR9 & 2);
             //} else if((addr & 0xfff00) == DBG_PORT) {
