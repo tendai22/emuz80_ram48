@@ -68,7 +68,7 @@
 #include "iopin.h"
 #include "xprintf.h"
 
-#define Z80_CLK 2000000UL // Z80 clock frequency(Max 20MHz)
+#define Z80_CLK 10000000UL // Z80 clock frequency(Max 20MHz)
 
 #define _XTAL_FREQ 64000000UL
 
@@ -91,13 +91,15 @@ int ss_flag = 0;
 
 // UART3 Transmit
 void putchx(int c) {
-    while(!U3TXBE); // Wait for Tx buffer empty
+//    while((PIR9&2)); // Wait for Tx buffer empty
+    while (U3TXBF);
     U3TXB = (unsigned char)c; // Write data
 }
 
 // UART3 Recive
 int getchx(void) {
-    while(U3RXBE); // Wait while Rx buffer is empty
+//    while(!(PIR9&1)); // Wait while Rx buffer is empty
+    while(U3RXBE);
     return U3RXB; // Read data
 }
 
@@ -342,8 +344,8 @@ void reset_DFF(void)
 {
     //TOGGLE;
     CLCSELECT = 2;      // CLC3 select
-    CLCnGLS3 = 0x40;    // 1 for D-FF RESET
-    CLCnGLS3 = 0x80;    // 0 for D-FF RESET
+    CLCnGLS2 = 0x40;    // 1 for D-FF SET
+    CLCnGLS2 = 0x80;    // 0 for D-FF SET
     //TOGGLE;
 }
 
@@ -563,9 +565,10 @@ void main(void) {
     CLCIN2PPS = 0x0C;   // RB4 <- /RFSH
     CLCIN3PPS = 0x0F;   // RB7 <- /WAIT
     CLCIN4PPS = 0x05;   // RA5 <- /RD
+#if 0
     CLCIN6PPS = 0x1F;   // RD7 <- A15
     CLCIN7PPS = 0x1E;   // RD6 <- A14
-
+#endif
     // ============ CLC1 /OE
     // /OE = (/MREQ == 0 && /RD == 0 && /RFSH == 1)
     CLCSELECT = 0;  // CLC1 select
@@ -608,25 +611,26 @@ void main(void) {
     
 //    CLCnSEL0 = 1;       // D-FF CLK <- CLCIN1PPS <- /IORQ
 //    CLCnSEL1 = 127;     // D-FF D NC
-    CLCnSEL0 = 0;       // D-FF CLK <-- CLCIN0PPS <- /MREQ
-    CLCnSEL1 = 0x36;    // D-FF D <- CLC4 
-    CLCnSEL2 = 127;     // D-FF SET NC
-    CLCnSEL3 = 127;     // D-FF RESET NC
+    CLCnSEL0 = 1;       // D-FF CLK <-- CLCIN1PPS <- /IORQ
+    CLCnSEL1 = 127;     // D-FF D NC 
+    CLCnSEL2 = 127;     // D-FF RESET NC
+    CLCnSEL3 = 127;     // D-FF SET NC
     
 //    CLCnGLS0 = 0x01;    // /IORQ ~|_  (inverted)
 //    CLCnGLS1 = 0x00;    // /RD (non inverted)
-    CLCnGLS0 = 0x01;    // D-FF CLK /MREQ ~|_  (inverted)
-    CLCnGLS1 = 0x04;    // D-FF D   CLC4 (inverted)
-    CLCnGLS2 = 0x00;    // D-FF SET (soft reset)
-    CLCnGLS3 = 0x80;    // 0 for D-FF RESET
+    CLCnGLS0 = 0x01;    // D-FF CLK /IORQ ~|_  (inverted)
+    CLCnGLS1 = 0x40;    // D-FF D NC (1 for D-FF D)
+    CLCnGLS2 = 0x80;    // 0 for D-FF RESET (soft reset)
+    CLCnGLS3 = 0x00;    // 0 for D-FF SET
 
     // reset D-FF
-    CLCnGLS3 = 0x40;    // 1 for D-FF RESET
-    CLCnGLS3 = 0x80;    // 0 for D-FF RESET
+    CLCnGLS2 = 0x40;    // 1 for D-FF RESET
+    CLCnGLS2 = 0x80;    // 0 for D-FF RESET
 
-    CLCnPOL = 0x00;     // non inverted the CLC3 output
+    CLCnPOL = 0x80;     // non inverted the CLC3 output
     CLCnCON = 0x84;     // Select D-FF (no interrupt)
-        
+
+#if 0
     // ============== CLC4 Address Decode
     CLCSELECT = 3;      // CLC4 select
     CLCnCON &= ~0x80;
@@ -643,7 +647,8 @@ void main(void) {
 
     CLCnPOL = 0x00;     // non inverted CLC4 output
     CLCnCON = 0x82;     // 4 input AND
-
+#endif
+    
     // Here, we have CLC's be intialized.
     // Now we change GPIO pins to be switched
     // 1, 2, 5, 6: Port A, C
@@ -665,16 +670,8 @@ void main(void) {
     RESET_off();    // RESET negate
     while(1){
         while(RB7);    // Wait for /WAIT == 9
-//        while(RA0);     // Wait for /AS == 0
-//        while(!RD6);
-        // /DTACK == 1, later we need to set /DTACK == 0
-        //TOGGLE;
-        //TOGGLE;
-        //if (!RA1)  // MREQ == 0, memory cycle, do nothing
-        //    goto end_of_cycle;
-        // IORQ == 0, IO R/W cycle or INTA cycle
         if(!RA5) { // RD == 0, Z80 read cycle (RW = 1)
-            addr = GET_ADDR();
+            addr = PORTF;
             if (addr == UART_CREG){ // UART control register
                 // PIR9 pin assign
                 // U3TXIF ... bit 1, 0x02
@@ -685,19 +682,11 @@ void main(void) {
                 // RXBE   ... bit 1, 0x02
                 // RXBF   ... bit 0, 0x01
                 //cc = (U3TXBE ? 0x20 : 0) | (U3RXBE ? 2 : 0);
-                cc = PIR9;
                 db_setout();
-                LATC = cc; // U3 flag
-                //xprintf("%02X,", cc);
+                LATC = U3FIFO; // U3 flag
             } else if(addr == UART_DREG) { // UART data register
-                cc = U3RXB; // U3 RX buffer
-                //xprintf("[%02X]", cc);
-                while(!(PIR9 & 2));
                 db_setout();
-                LATC = cc;
-                TOGGLE;
-                for (int i = 3; i-- > 0; ) nop;
-                TOGGLE;
+                LATC = U3RXB;
             //} else if((addr & 0xff00) == DBG_PORT) {
             //    monitor_mode = 2;   // DBG_PORT read
             } else { // invalid address
@@ -712,19 +701,12 @@ void main(void) {
                 monitor_mode = 0;
             }
         } else { // Z80 write cycle (RW = 0)
-            addr = GET_ADDR();
-            // A19 == 1, I/O address area
+            addr = PORTF;
             if(addr == UART_DREG) { // UART data register
                 // this cycle actually starts at /MREQ down edge,
                 // so too early PORTC reading will get garbage.
                 // We need to wait for stable Z80 data bus.
-                TOGGLE;
-                for (int i = 5; i-- > 0; ) nop;
-                TOGGLE;
                 U3TXB = PORTC; // Write into U3 TX buffer
-                //xprintf("(%02X)", PORTC);
-                while(!(PIR9 & 2));
-            //while(PIR9 & 2);
             //} else if((addr & 0xfff00) == DBG_PORT) {
             //    monitor_mode = 1;   // DBG_PORT write
             } else {
@@ -743,7 +725,6 @@ void main(void) {
         BUSRQ_on();
         reset_DFF(); // reset D-FF, /DTACK be zero
         while(RA0 == 0 || RA1 == 0); // Wait for DS = 1;
-        //for (int i = 3; i-- > 0;) nop;
         db_setin(); // Set data bus as input
         BUSRQ_off();
     }

@@ -25,8 +25,10 @@
 
 ; header modules, RST 10H, RST 18H, RST 8H
 
-uart_d  equ 0e001h
-uart_c  equ 0e000h
+uart_d  equ 01h
+uart_c  equ 00h
+txbf    equ 10h
+rxbe    equ 02h
 
         org 0
         ld  sp,0100h
@@ -44,20 +46,21 @@ uart_c  equ 0e000h
 ;
 ;
         org 040H
-getch:  ld  a,(uart_c)
-        and a,1         ; check RXRDY
-        jr  z,getch
-        ld  a,(uart_d)
+getch:  in  a,(uart_c)
+        and a,rxbe         ; check RXRDY
+        jr  nz,getch
+        in  a,(uart_d)
         ret
-kbhit:  ld  a,(uart_c)
-        and a,1         ; check RXRDY
+kbhit:  in  a,(uart_c)
+        xor a,0ffh
+        and a,rxbe         ; check RXRDY
         ret
 putch:  push af
-putch1: ld  a,(uart_c)
-        and a,2         ; check TXRDY
-        jr  z,putch1
+putch1: in  a,(uart_c)
+        and a,txbf         ; check TXRDY
+        jr  nz,putch1
         pop af
-        ld  (uart_d),a
+        out  (uart_d),a
         ret
 
 ; GENERAL EQUATES
