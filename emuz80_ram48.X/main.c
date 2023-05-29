@@ -68,7 +68,7 @@
 #include "iopin.h"
 #include "xprintf.h"
 
-#define Z80_CLK 10000000UL // Z80 clock frequency(Max 20MHz)
+#define Z80_CLK 8000000UL // Z80 clock frequency(Max 20MHz)
 
 #define _XTAL_FREQ 64000000UL
 
@@ -85,6 +85,7 @@ union {
 
 addr_t break_address = 0; // break_address is zero, it is invalid
 int ss_flag = 0;
+long inc_value = 0;
 
 #define db_setin() (TRISC = 0xff)
 #define db_setout() (TRISC = 0x00)
@@ -263,6 +264,18 @@ void manualboot(void)
         }
         if (c == ',') { // clear ram
             clear_all();
+            continue;
+        }
+        if (c == '#') {
+            c = getchr();
+            d = to_hex((unsigned char)c);
+            if (0 <= d && d <= 15) {
+                if (d == 0)
+                    d = 16;
+                xprintf("[%dMHz]", d);
+                inc_value = ((unsigned long)d) * 1000000UL * 2 / 61;
+                
+            }
             continue;
         }
         addr_flag = ((c == '=') || (c == '%'));
@@ -496,16 +509,6 @@ void main(void) {
     ANSELA0 = 0; // Disable analog function
     TRISA0 = 1; // Set as input
 
-    // Z80 clock(RA3) by NCO FDC mode
-    RA3PPS = 0x3f; // RA3 assign NCO1
-    ANSELA3 = 0; // Disable analog function
-    TRISA3 = 0; // NCO output pin
-    NCO1INC = Z80_CLK * 2 / 61;
-    NCO1CLK = 0x00; // Clock source Fosc
-    NCO1PFM = 0;  // FDC mode
-    NCO1OUT = 1;  // NCO output enable
-    NCO1EN = 1;   // NCO enable
-
     // UART3 initialize
 //    U3BRG = 416; // 9600bps @ 64MHz
     U3CON0 |= (1<<7);   // BRGS = 0, 4 baud clocks per bit
@@ -535,7 +538,22 @@ void main(void) {
 
     U3ON = 1; // Serial port enable
     xprintf(";");
+    inc_value = Z80_CLK * 2 / 61;
     manualboot();
+
+    // Z80 clock(RA3) by NCO FDC mode
+    //RA3PPS = 0x3f; // RA3 assign NCO1
+    ANSELA3 = 0; // Disable analog function
+    TRISA3 = 1; //0; // NCO output pin
+    if (inc_value > 0x80000)
+        inc_value = 0x80000;
+    NCO1INC = inc_value;
+    NCO1CLK = 0x00; // Clock source Fosc
+    NCO1PFM = 0;  // FDC mode
+    NCO1OUT = 1;  // NCO output enable
+    NCO1EN = 1;   // NCO enable
+    xprintf("[%05lX]", inc_value);
+    
 
     TOGGLE;
     TOGGLE;
@@ -565,6 +583,7 @@ void main(void) {
     CLCIN2PPS = 0x0C;   // RB4 <- /RFSH
     CLCIN3PPS = 0x0F;   // RB7 <- /WAIT
     CLCIN4PPS = 0x05;   // RA5 <- /RD
+    CLCIN5PPS = 0x2A;   // NCO1 <- (CLK)
 #if 0
     CLCIN6PPS = 0x1F;   // RD7 <- A15
     CLCIN7PPS = 0x1E;   // RD6 <- A14
@@ -586,7 +605,7 @@ void main(void) {
     
     CLCnPOL = 0x80;     // inverted the CLC1 output
     CLCnCON = 0x82;     // 4 input AMD
-            
+
     // ============ CLC2 /WE
     // /OE = (/MREQ == 0 && /RD == 1 && /RFSH == 1)
     CLCSELECT = 1;  // CLC2 select
@@ -604,7 +623,7 @@ void main(void) {
     
     CLCnPOL = 0x80;     // inverted the CLC2 output
     CLCnCON = 0x82;     // 4 input AMD
-            
+    
     // ============== CLC3 /WAIT
     CLCSELECT = 2;      // CLC3 select
     CLCnCON &= ~0x80;
@@ -630,6 +649,28 @@ void main(void) {
     CLCnPOL = 0x80;     // non inverted the CLC3 output
     CLCnCON = 0x84;     // Select D-FF (no interrupt)
 
+    // ============= CLC5 shorten /WE with JK-FF
+    CLCSELECT = 4;      // CLC5 select
+    CLCnCON &= ~0x80;
+    
+    CLCnSEL0 = 0;    // CLCIN0PPS /MREQ RA1
+    CLCnSEL1 = 2;    // CLCIN2PPS /RFSH RB4
+    CLCnSEL2 = 4;    // CLCIN4PPS /RD RA5
+    CLCnSEL3 = 0x2A;    // NCO1 (CLK)
+    
+    CLCnGLS0 = 0x56; //0x56;    // D1S = no-inv
+                        // D2S = inv
+                        // D3S = inv
+                        // D4S = inv
+                        // and G0POL is inv
+//    CLCnGLS0 = 0x00;
+    CLCnGLS1 = 0x00;    // J input 1 with G1POL is inv
+    CLCnGLS2 = 0x00;    // RESET input 0 with G2POL is no-inv
+    CLCnGLS3 = 0x00;    // K input 1 with G3POL is inv
+    
+    CLCnPOL = 0x8B;     //0x0B;     // 0b00001011 G1,G2,G4POL is 1, G3POL is 0
+    CLCnCON = 0x86;     // select JK-FF (4 input AND)
+    
 #if 0
     // ============== CLC4 Address Decode
     CLCSELECT = 3;      // CLC4 select
@@ -655,7 +696,15 @@ void main(void) {
     // 3, 4, 7, 8: Port B, D
     RA4PPS = 0x01;      // CLC1 -> RA4 -> /OE
     RA2PPS = 0x02;      // CLC2 -> RA2 -> /WE
+    if (inc_value >= 0x60000) {
+        xprintf("shorten;");
+        RA2PPS = 0x05;
+    }
+    RA2PPS = 0x02;
+    
     RB7PPS = 0x03;      // CLC3 -> RB7 -> /WAIT
+    //RB6PPS = 0x04;      // CLC4 -> RB6 (tentative TEST pin)
+
     
     xprintf("start ss = %d, bp = %04X\n", ss_flag, break_address);
     // Z80 start
