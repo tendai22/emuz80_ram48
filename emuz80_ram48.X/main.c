@@ -72,7 +72,7 @@
 
 #define _XTAL_FREQ 64000000UL
 
-#define TOGGLE do { LATB6 ^= 1; } while(0)
+#define TOGGLE do { LATE2 ^= 1; } while(0)
 
 //unsigned char ram[RAM_SIZE]; // Equivalent to RAM
 union {
@@ -108,25 +108,26 @@ int getchx(void) {
 char peek_ram(addr_t addr)
 {
     char c;
-    TRISD &= ~0xff;
-    TRISF = 0;  // A0-12 output
+    TRISD = 0;
+    TRISF = 0;  // A0-15 output
     LATD = ((unsigned char)((addr >> 8) & 0xff));
     LATF = (unsigned char)(addr & 0xff);
     db_setin();
-    LATA4 = 0;  // RA4: OE = 0;
+    LATA5 = 0;  // RA5: OE = 0;
 #define nop asm("  nop")
     nop; nop; nop; nop; nop; nop; nop;   // dummy write for 400ns
     c = PORTC;
-    LATA4 = 1;
-    TRISD |= 0xff;
-    TRISF = 0xff;   // A0-12 input
+    LATA5 = 1;
+    TRISD = 0xff;
+    TRISF = 0xff;   // A0-15 input
     return c;
 }
 
 void poke_ram(addr_t addr, char c)
 {
     //xprintf("(%04x,%02x)", addr, c);
-    TRISD &= ~0xff;
+    TOGGLE;
+    TRISD = 0;
     TRISF = 0;  // AA0-15 output
     LATD = ((unsigned char)((addr >> 8) & 0xff));
     LATF = (unsigned char)(addr & 0xff);
@@ -136,8 +137,9 @@ void poke_ram(addr_t addr, char c)
     nop; nop; nop; nop; nop; nop; nop;   // dummy write for 400ns
     LATA2 = 1;
     db_setin();
-    TRISD |= 0xff;
+    TRISD = 0xff;
     TRISF = 0xff;   // A0-15 input
+    TOGGLE;
 }
     
 void BUSRQ_on(void)
@@ -424,10 +426,10 @@ void main(void) {
     LATE1 = 0; // RESET assert
     TRISE1 = 0; // Set as output
 
-    // RB6: TEST Pin output
-    ANSELB6 = 0;
-    TRISB6 = 0;
-    LATB6 = 0;
+    // RE2: TEST Pin output
+    ANSELE2 = 0;
+    TRISE2 = 0;
+    LATE2 = 0;
     
     TOGGLE; TOGGLE;
     // xprintf initialize
@@ -444,7 +446,7 @@ void main(void) {
     // Address bus A15-A8 pin
     ANSELD = 0x00; // Disable analog function
     WPUD = 0xff; // Week pull up
-    TRISD |= 0xff; // Set as input
+    TRISD = 0xff; // Set as input
 
     // Address bus A7-A0 pin
     ANSELF = 0x00; // Disable analog function
@@ -469,34 +471,28 @@ void main(void) {
     TRISE0 = 0; // Set as output
 
     // RE2: INT output pin
-    ANSELE0 = 0; // Disable analog function
-    LATE0 = 1; // No interrupt request
-    TRISE0 = 0; // Set as output
+    ANSELB6 = 0; // Disable analog function
+    LATB6 = 1; // No interrupt request
+    TRISB6 = 0; // Set as output
 
     // RB7: WAIT output pin
     ANSELB7 = 0; // Disable analog function
     LATB7 = 1; // WAIT negate
     TRISB7 = 0; // Set as output
 
-    // RB7: M1 input pin
+    // RB5: /RFSH input pin
     ANSELB5 = 0; // Disable analog function
     TRISB5 = 1; // Set as input
 
-    // RB4: RFSH input pin
-    ANSELB4 = 0;
-    TRISB4 = 1; // set as input
-    
-    // RA5: RD input pin
+    // RA5: RD-SRAM OE input pin
     ANSELA5 = 0; // Disable analog function
     TRISA5 = 1; // Set as input
 
-    // SRAM OE,WE
-    // RA4: SRAM OE pin
+    // RA4: /M1 pin
     ANSELA4 = 0;
-    LATA4 = 1;  // WE negate
-    TRISA4 = 0; // set as output
+    TRISA4 = 1; // set as input
     
-    // RA2: SRAM WE pin
+    // RA2: WR-SRAM WE pin
     ANSELA2 = 0;
     LATA2 = 1;  // OE negate
     TRISA2 = 0; // set as output
@@ -539,12 +535,12 @@ void main(void) {
     U3ON = 1; // Serial port enable
     xprintf(";");
     inc_value = Z80_CLK * 2 / 61;
-    manualboot();
+    
 
     // Z80 clock(RA3) by NCO FDC mode
-    //RA3PPS = 0x3f; // RA3 assign NCO1
+    RA3PPS = 0x3f; // RA3 assign NCO1
     ANSELA3 = 0; // Disable analog function
-    TRISA3 = 1; //0; // NCO output pin
+    TRISA3 = 0; //0; // NCO output pin
     if (inc_value > 0x80000)
         inc_value = 0x80000;
     NCO1INC = inc_value;
@@ -554,11 +550,46 @@ void main(void) {
     NCO1EN = 1;   // NCO enable
     xprintf("[%05lX]", inc_value);
     
+    nop; nop; nop; nop;
+    LATE0 = 1; // BUSRQ == L
+    LATE1 = 1; // start Z80 CPU and immediately into BUSRQ
+    nop; nop; nop; nop;
+    TOGGLE;
+    TOGGLE;
+    // BOOT mode
+    // A0-A15 out, D0-D7 out
+    // MREQ, RD, WR out
+    TRISD = 0;
+    TRISF = 0;
+    ANSELA1 = 0;
+    LATA1 = 1;
+    TRISA1 = 0;         // MREQ-SRAM CS out
+    ANSELA2 = 0;
+    LATA2 = 1;
+    TRISA2 = 0;         // WR-SRAM WE out
+    ANSELA5 = 0;
+    LATA5 = 1;
+    TRISA5 = 0;         // RD-SRAM OE out
+    // MREQ == L
+    LATA1 = 0;
+    manualboot();
+    LATA1 = 1;
+    LATE1 = 0;          // RESET again
+    LATE1 = 1;          // BUSRQ == H
 
+    // Z80 Running mode
+    // A0-A15 in, D0-D7 in
+    // MREQ, RD, WR in
+    TRISD = 0xff;
+    TRISF = 0xff;
+    TRISA1 = 1;
+    TRISA2 = 1;
+    TRISA5 = 1;         // MREQ, RD, WR become input mode
+    
     TOGGLE;
     TOGGLE;
     // Re-initialze for CPU running
-#if 1
+
     // Address bus A15-A8 pin
     ANSELD = 0x00; // Disable analog function
     WPUD = 0xff; // Week pull up
@@ -573,57 +604,18 @@ void main(void) {
     ANSELC = 0x00; // Disable analog function
     WPUC = 0xff; // Week pull up
     TRISC = 0xff; // Set as input(default)
-#endif
+
     // reconfigurate CLC devices
     // CLC pin assign
     // 0, 1, 4, 5: Port A, C
     // 2, 3, 6, 7: Port B, D
     CLCIN0PPS = 0x01;   // RA1 <- /MREQ
     CLCIN1PPS = 0x00;   // RA0 <- /IORQ
-    CLCIN2PPS = 0x0C;   // RB4 <- /RFSH
+    CLCIN2PPS = 0x0D;   // RB5 <- /RFSH
     CLCIN3PPS = 0x0F;   // RB7 <- /WAIT
     CLCIN4PPS = 0x05;   // RA5 <- /RD
     CLCIN5PPS = 0x2A;   // NCO1 <- (CLK)
-#if 0
-    CLCIN6PPS = 0x1F;   // RD7 <- A15
-    CLCIN7PPS = 0x1E;   // RD6 <- A14
-#endif
-    // ============ CLC1 /OE
-    // /OE = (/MREQ == 0 && /RD == 0 && /RFSH == 1)
-    CLCSELECT = 0;  // CLC1 select
-    CLCnCON &= ~0x80;
-    
-    CLCnSEL0 = 0;       // CLCIN0PPS <- /MREQ
-    CLCnSEL1 = 2;       // CLCIN2PPS <- /RFSH
-    CLCnSEL2 = 4;       // CLCIN4PPS <- /RD
-    CLCnSEL3 = 127;     // NC
-    
-    CLCnGLS0 = 0x01;    // /MREQ == 0 (inverted)
-    CLCnGLS1 = 0x08;    // /RFSH == 1 (non-inverted)
-    CLCnGLS2 = 0x10;    // /RD == 0 (inverted)
-    CLCnGLS3 = 0x40;    // 1 for AND gate
-    
-    CLCnPOL = 0x80;     // inverted the CLC1 output
-    CLCnCON = 0x82;     // 4 input AMD
 
-    // ============ CLC2 /WE
-    // /OE = (/MREQ == 0 && /RD == 1 && /RFSH == 1)
-    CLCSELECT = 1;  // CLC2 select
-    CLCnCON &= ~0x80;
-    
-    CLCnSEL0 = 0;       // CLCIN0PPS <- /MREQ
-    CLCnSEL1 = 2;       // CLCIN2PPS <- /RFSH
-    CLCnSEL2 = 4;       // CLCIN4PPS <- /RD
-    CLCnSEL3 = 127;     // NC
-    
-    CLCnGLS0 = 0x01;    // /MREQ == 0 (inverted)
-    CLCnGLS1 = 0x08;    // /RFSH == 1 (not inverted)
-    CLCnGLS2 = 0x20;    // /RD == 1 (not inverted)
-    CLCnGLS3 = 0x40;    // 1 for AND gate
-    
-    CLCnPOL = 0x80;     // inverted the CLC2 output
-    CLCnCON = 0x82;     // 4 input AMD
-    
     // ============== CLC3 /WAIT
     CLCSELECT = 2;      // CLC3 select
     CLCnCON &= ~0x80;
@@ -649,62 +641,11 @@ void main(void) {
     CLCnPOL = 0x80;     // non inverted the CLC3 output
     CLCnCON = 0x84;     // Select D-FF (no interrupt)
 
-    // ============= CLC5 shorten /WE with JK-FF
-    CLCSELECT = 4;      // CLC5 select
-    CLCnCON &= ~0x80;
-    
-    CLCnSEL0 = 0;    // CLCIN0PPS /MREQ RA1
-    CLCnSEL1 = 2;    // CLCIN2PPS /RFSH RB4
-    CLCnSEL2 = 4;    // CLCIN4PPS /RD RA5
-    CLCnSEL3 = 0x2A;    // NCO1 (CLK)
-    
-    CLCnGLS0 = 0x56; //0x56;    // D1S = no-inv
-                        // D2S = inv
-                        // D3S = inv
-                        // D4S = inv
-                        // and G0POL is inv
-//    CLCnGLS0 = 0x00;
-    CLCnGLS1 = 0x00;    // J input 1 with G1POL is inv
-    CLCnGLS2 = 0x00;    // RESET input 0 with G2POL is no-inv
-    CLCnGLS3 = 0x00;    // K input 1 with G3POL is inv
-    
-    CLCnPOL = 0x8B;     //0x0B;     // 0b00001011 G1,G2,G4POL is 1, G3POL is 0
-    CLCnCON = 0x86;     // select JK-FF (4 input AND)
-    
-#if 0
-    // ============== CLC4 Address Decode
-    CLCSELECT = 3;      // CLC4 select
-    CLCnCON &= ~0x80;
-    
-    CLCnSEL0 = 6;       // A15
-    CLCnSEL1 = 7;       // A14
-    CLCnSEL2 = 2;       // /RFSH
-    CLCnSEL3 = 127;     // NC
-    
-    CLCnGLS0 = 0x02;    // A15 (non invert)
-    CLCnGLS1 = 0x08;    // A14 (non invert)
-    CLCnGLS2 = 0x20;    // /RFSH (non invert)
-    CLCnGLS3 = 0x40;    // 1 for AND gate
-
-    CLCnPOL = 0x00;     // non inverted CLC4 output
-    CLCnCON = 0x82;     // 4 input AND
-#endif
-    
     // Here, we have CLC's be intialized.
     // Now we change GPIO pins to be switched
     // 1, 2, 5, 6: Port A, C
     // 3, 4, 7, 8: Port B, D
-    RA4PPS = 0x01;      // CLC1 -> RA4 -> /OE
-    RA2PPS = 0x02;      // CLC2 -> RA2 -> /WE
-    if (inc_value >= 0x60000) {
-        xprintf("shorten;");
-        RA2PPS = 0x05;
-    }
-    RA2PPS = 0x02;
-    
     RB7PPS = 0x03;      // CLC3 -> RB7 -> /WAIT
-    //RB6PPS = 0x04;      // CLC4 -> RB6 (tentative TEST pin)
-
     
     xprintf("start ss = %d, bp = %04X\n", ss_flag, break_address);
     // Z80 start
