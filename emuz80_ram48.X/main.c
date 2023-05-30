@@ -113,11 +113,13 @@ char peek_ram(addr_t addr)
     LATD = ((unsigned char)((addr >> 8) & 0xff));
     LATF = (unsigned char)(addr & 0xff);
     db_setin();
+    LATA1 = 0;
     LATA5 = 0;  // RA5: OE = 0;
 #define nop asm("  nop")
     nop; nop; nop; nop; nop; nop; nop;   // dummy write for 400ns
     c = PORTC;
     LATA5 = 1;
+    LATA1 = 1;
     TRISD = 0xff;
     TRISF = 0xff;   // A0-15 input
     return c;
@@ -133,10 +135,12 @@ void poke_ram(addr_t addr, char c)
     LATF = (unsigned char)(addr & 0xff);
     db_setout();
     LATC = c;
+    LATA1 = 0;
     LATA2 = 0;  // RA2: WE = 0;
     nop; nop; nop; nop; nop; nop; nop;   // dummy write for 400ns
     LATA2 = 1;
-    db_setin();
+    LATA1 = 1;
+    //db_setin();
     TRISD = 0xff;
     TRISF = 0xff;   // A0-15 input
     TOGGLE;
@@ -408,6 +412,19 @@ error:
     return;
 }
 
+void start_clock(unsigned long value)
+{
+    NCO1EN = 0;
+    xprintf("start %0lX\n", value);
+    if (value > 0x80000)
+        value = 0x80000;
+    NCO1INC = value;
+    NCO1CLK = 0x00; // Clock source Fosc
+    NCO1PFM = 0;  // FDC mode
+    NCO1OUT = 1;  // NCO output enable
+    NCO1EN = 1;   // NCO enable
+}
+
 
 #define db_setin() (TRISC = 0xff)
 #define db_setout() (TRISC = 0x00)
@@ -534,25 +551,20 @@ void main(void) {
 
     U3ON = 1; // Serial port enable
     xprintf(";");
-    inc_value = Z80_CLK * 2 / 61;
-    
+    //inc_value = Z80_CLK * 2 / 61;
+    inc_value = 0x20000;    // 4MHz
 
     // Z80 clock(RA3) by NCO FDC mode
     RA3PPS = 0x3f; // RA3 assign NCO1
     ANSELA3 = 0; // Disable analog function
     TRISA3 = 0; //0; // NCO output pin
-    if (inc_value > 0x80000)
-        inc_value = 0x80000;
-    NCO1INC = inc_value;
-    NCO1CLK = 0x00; // Clock source Fosc
-    NCO1PFM = 0;  // FDC mode
-    NCO1OUT = 1;  // NCO output enable
-    NCO1EN = 1;   // NCO enable
+
+    start_clock(inc_value);
     xprintf("[%05lX]", inc_value);
     
     nop; nop; nop; nop;
-    LATE0 = 1; // BUSRQ == L
-    LATE1 = 1; // start Z80 CPU and immediately into BUSRQ
+    BUSRQ_on(); // BUSRQ == L
+    RESET_on(); // start Z80 CPU and immediately into BUSRQ
     nop; nop; nop; nop;
     TOGGLE;
     TOGGLE;
@@ -571,12 +583,15 @@ void main(void) {
     LATA5 = 1;
     TRISA5 = 0;         // RD-SRAM OE out
     // MREQ == L
-    LATA1 = 0;
+    //LATA1 = 0;
     manualboot();
     LATA1 = 1;
-    LATE1 = 0;          // RESET again
-    LATE1 = 1;          // BUSRQ == H
+    RESET_on();          // RESET again
+    BUSRQ_off();          // BUSRQ == H
 
+    // restart clock
+    start_clock(inc_value);
+    
     // Z80 Running mode
     // A0-A15 in, D0-D7 in
     // MREQ, RD, WR in
